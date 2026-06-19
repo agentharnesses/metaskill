@@ -6,9 +6,9 @@ A skill for agents that don't have native [Agent Harnesses](https://agentharness
 
 The [Agent Harnesses standard](https://agentharnesses.io) defines a way to package AI agent roles, skills, and contextual references into a portable directory structure. A harness contains a `HARNESS.md` entry point, a `skills/` directory of atomic capabilities, and a `references/` directory of supporting documentation. Large harnesses can contain dozens of skills and references organized into nested subdirectories.
 
-Agents with **native harness integration** get purpose-built tools — `load_skill()`, `load_reference()`, `run_script()` — that let them navigate a harness efficiently. Agents that only support **skills** (individual callable capabilities) don't have those tools and would otherwise have to load the entire harness upfront, exhausting their context window with irrelevant content.
+Agents with native harness integration should employ progressive disclosure to navigate a harness effectively. Agents that only support **skills** (individual callable capabilities) don't have those tools and often, as a result, inefficiently traverse large harnesses.
 
-metaskill bridges that gap.
+The "agent harnesses metaskill", exposed to agents as "agent-harnesses" bridges that gap by exposing tools for progressive exposure of a harness to the agent, allowing agents to more rapidly and robustly explore large harnesses.
 
 ## Core Principles
 
@@ -18,7 +18,7 @@ Rather than loading a harness all at once, metaskill exposes a script (`disclose
 
 **Skill-Based Invocation**
 
-Many agent runtimes route all capability access through a single skill-invocation mechanism. metaskill acts as a proxy: by invoking a single skill (`agent-harnesses`), an agent gains access to the full progressive disclosure workflow without needing any harness-specific tooling wired into its runtime.
+Some agent runtimes, like claude, do not support nested skill structures. "agent-harnesses" acts as a proxy: by invoking a single skill (`agent-harnesses`), an agent gains access to the full progressive disclosure workflow without needing any harness-specific tooling to support nested skill structures.
 
 ## Structure
 
@@ -68,7 +68,7 @@ python agent-harnesses/scripts/disclose.py --session a3f2c1b0 --select "1"
 
 - Selecting a **group** queues it for exploration and returns its contents on the next call
 - Selecting a **skill** or **file** adds it directly to the accumulated resource list
-- Unselected groups are never explored — this is where context efficiency comes from
+- Unselected groups are never explored
 
 ### 3. Repeat until complete
 
@@ -103,7 +103,36 @@ When `disclose.py` peeks a directory, each entry is classified:
 | Directory without `SKILL.md` | `"group"` | `<DIRNAME_UPPER>.md` inside that dir (e.g. `DATABASE.md` inside `database/`) |
 | File | Type = parent top-level folder name (e.g. `"references"`) | File frontmatter `description` field or first content line |
 
-Summary files like `SKILLS.md`, `REFERENCES.md`, and `HARNESS.md` are skipped — they exist to describe their containing directory to the parent level, not as items to select.
+Summary files like `SKILLS.md`, `REFERENCES.md`, and `HARNESS.md` are not provided to the model as an end result as they exist for routing purposes.
+
+## Installation
+
+### Claude Code — global (all projects)
+
+Symlink the `agent-harnesses` skill into your user skills directory so Claude Code can invoke it from any project:
+
+```bash
+git clone https://github.com/danielwarfield/metaskill
+ln -s "$(pwd)/metaskill/agent-harnesses" ~/.claude/skills/agent-harnesses
+```
+
+The skill will be available to Claude as `agent-harnesses`.
+
+### Claude Code — project-local (one project)
+
+To limit the skill to a single project, symlink into that project's `.claude/skills/` directory instead:
+
+```bash
+git clone https://github.com/danielwarfield/metaskill
+mkdir -p /path/to/your/project/.claude/skills
+ln -s "$(pwd)/metaskill/agent-harnesses" /path/to/your/project/.claude/skills/agent-harnesses
+```
+
+### Other Agent Skills-compatible runtimes
+
+Copy or symlink `agent-harnesses/` wherever your runtime loads skills from, then invoke it as `agent-harnesses`. Consult your runtime's documentation for the exact skill directory path.
+
+---
 
 ## Running the Tests
 
