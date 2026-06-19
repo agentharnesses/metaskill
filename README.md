@@ -112,7 +112,7 @@ Summary files like `SKILLS.md`, `REFERENCES.md`, and `HARNESS.md` are not provid
 Symlink the `agent-harnesses` skill into your user skills directory so Claude Code can invoke it from any project:
 
 ```bash
-git clone https://github.com/danielwarfield/metaskill
+git clone https://github.com/agentharnesses/metaskill
 ln -s "$(pwd)/metaskill/agent-harnesses" ~/.claude/skills/agent-harnesses
 ```
 
@@ -123,7 +123,7 @@ The skill will be available to Claude as `agent-harnesses`.
 To limit the skill to a single project, symlink into that project's `.claude/skills/` directory instead:
 
 ```bash
-git clone https://github.com/danielwarfield/metaskill
+git clone https://github.com/agentharnesses/metaskill
 mkdir -p /path/to/your/project/.claude/skills
 ln -s "$(pwd)/metaskill/agent-harnesses" /path/to/your/project/.claude/skills/agent-harnesses
 ```

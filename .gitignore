@@ -1,4 +1,27 @@
+# Sessions
 agent-harnesses/sessions/*
 !agent-harnesses/sessions/.gitkeep
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# Claude Code
+.claude/
+!.claude/settings.json
+
+# Superpowers
+.superpowers/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
