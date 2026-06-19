@@ -1,2 +1,4 @@
 agent-harnesses/sessions/*
 !agent-harnesses/sessions/.gitkeep
+__pycache__/
+*.pyc
