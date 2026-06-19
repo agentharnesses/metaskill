@@ -49,6 +49,40 @@ def _truncate(s: str, n: int) -> str:
     return s if len(s) <= n else s[:n - 3] + "..."
 
 
+def format_lines(node: dict, prefix: str = "", is_last: bool = True, depth: int = 0) -> list[str]:
+    lines: list[str] = []
+
+    if depth == 0:
+        lines.append(f"{node['name']}/")
+        child_prefix = ""
+    else:
+        connector = "└── " if is_last else "├── "
+        lines.append(f"{prefix}{connector}{node['name']}/")
+        child_prefix = prefix + ("    " if is_last else "│   ")
+
+    all_items = [("spec", s) for s in node["specs"]] + [("child", c) for c in node["children"]]
+
+    for i, (kind, item) in enumerate(all_items):
+        item_is_last = (i == len(all_items) - 1)
+        item_connector = "└── " if item_is_last else "├── "
+
+        if kind == "spec":
+            badge = _badge(item["kind"])
+            name = item["name"]
+            desc = _truncate(item.get("description", ""), 60)
+            line = f"{child_prefix}{item_connector}{badge}  {name}"
+            if desc:
+                line += f"  {desc}"
+            lines.append(line)
+        else:
+            lines.extend(format_lines(item, child_prefix, item_is_last, depth + 1))
+
+        if depth == 0 and not item_is_last:
+            lines.append("│")
+
+    return lines
+
+
 def build_tree(directory: Path, root: Path) -> dict | None:
     raw_specs = spec_files_in(directory)
     specs = []
