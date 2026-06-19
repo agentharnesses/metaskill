@@ -8,6 +8,8 @@ Use this skill when you are pointed to a harness directory and need to discover 
 ## Skills
 
 - `scripts/disclose.py` — session-based harness explorer
+- `scripts/reverse_disclose.py` — find all .md files above a path that reference it
+- `scripts/map_references.py` — print a visual tree of all spec files in a harness
 
 ## How to Use
 
@@ -83,3 +85,37 @@ Continue until `status` is `"complete"`:
 ```
 python scripts/disclose.py --session <id> --cancel
 ```
+
+---
+
+## Reverse Disclosure
+
+Use `scripts/reverse_disclose.py` for maintenance: given a file or directory, find every `.md` file above it (in ancestor directories, up to the harness root) that contains a markdown link to it.
+
+```
+python scripts/reverse_disclose.py <target_path> [--root <harness_root>]
+```
+
+- `target_path` — file or directory to look up
+- `--root` — explicit search root; defaults to nearest ancestor containing `HARNESS.md`
+
+**Output:**
+
+```json
+{
+  "status": "complete",
+  "target": "skills/auth/SKILL.md",
+  "root": "/abs/path/to/harness",
+  "self": {"path": "/abs/path/to/skills/auth/SKILL.md"},
+  "references": [
+    {"kind": "routing", "path": "/abs/path/to/skills/SKILLS.md"},
+    {"kind": "harness", "path": "/abs/path/to/HARNESS.md"}
+  ]
+}
+```
+
+- `self` — present only when the target is a `.md` file
+- `references` — each ancestor `.md` file that links to the target; each entry has:
+  - `kind` — `"routing"` for SKILLS.md index files, `"harness"` for HARNESS.md
+  - `path` — absolute path to the referencing file
+- Results are ordered nearest ancestor first

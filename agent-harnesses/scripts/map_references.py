@@ -116,3 +116,35 @@ def build_tree(directory: Path, root: Path) -> dict | None:
         "specs": specs,
         "children": child_nodes,
     }
+
+
+def cmd_run(harness_root: str) -> None:
+    root = Path(harness_root).resolve()
+    if not root.exists():
+        print(f"error: path not found: {harness_root}")
+        sys.exit(1)
+
+    node = build_tree(root, root)
+    if node is None:
+        print(f"error: no spec files found under {harness_root}")
+        sys.exit(1)
+
+    print("\n".join(format_lines(node)))
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(
+        description="Print a visual tree of all spec files in an Agent Harness"
+    )
+    p.add_argument(
+        "harness_root",
+        nargs="?",
+        default=".",
+        help="Path to harness root (default: current directory)",
+    )
+    args = p.parse_args()
+    cmd_run(args.harness_root)
+
+
+if __name__ == "__main__":
+    main()

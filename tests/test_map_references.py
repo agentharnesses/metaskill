@@ -1,7 +1,7 @@
 import pytest
 import re
 from pathlib import Path
-from scripts.map_references import get_spec_description, build_tree, format_lines
+from scripts.map_references import get_spec_description, build_tree, format_lines, cmd_run
 
 
 def test_get_spec_description_reads_frontmatter(tmp_path):
@@ -193,3 +193,43 @@ def test_format_lines_root_separator_between_items():
     lines = format_lines(node)
     # A bare "│" separator should appear between spec and child at root level
     assert "│" in lines
+
+
+def test_cmd_run_prints_tree_for_valid_harness(tmp_path, capsys):
+    (tmp_path / "HARNESS.md").write_text("---\ndescription: Test harness\n---\n")
+    cmd_run(str(tmp_path))
+    out = capsys.readouterr().out
+    assert tmp_path.name + "/" in out
+    assert "HARNESS.md" in strip_ansi(out)
+    assert "[harness]" in strip_ansi(out)
+
+
+def test_cmd_run_shows_nested_skills(tmp_path, capsys):
+    (tmp_path / "HARNESS.md").touch()
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    auth = skills / "auth"
+    auth.mkdir()
+    (auth / "SKILL.md").write_text("---\ndescription: Auth\n---\n")
+
+    cmd_run(str(tmp_path))
+    out = strip_ansi(capsys.readouterr().out)
+    assert "skills/" in out
+    assert "auth/" in out
+    assert "SKILL.md" in out
+
+
+def test_cmd_run_exits_on_nonexistent_path(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        cmd_run(str(tmp_path / "nonexistent"))
+    out = capsys.readouterr().out
+    assert "not found" in out.lower() or "error" in out.lower()
+
+
+def test_cmd_run_exits_when_no_spec_files_found(tmp_path, capsys):
+    empty = tmp_path / "empty_harness"
+    empty.mkdir()
+    with pytest.raises(SystemExit):
+        cmd_run(str(empty))
+    out = capsys.readouterr().out
+    assert "no spec files" in out.lower() or "error" in out.lower()
