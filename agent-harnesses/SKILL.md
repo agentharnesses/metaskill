@@ -56,7 +56,7 @@ Respond with only the IDs of items relevant to your task, comma-separated. Pass 
 python scripts/disclose.py --session <id> --select "1,3"
 ```
 
-**Be selective.** Unselected groups are not explored. The goal is to load as little as possible.
+**Be selective.** Unselected groups are not explored. The goal is to load as little as possible while still getting all information relevent to solve a task.
 
 ### 3. Repeat until complete
 
