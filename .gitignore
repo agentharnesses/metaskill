@@ -1,2 +1,2 @@
-sessions/*
-!sessions/.gitkeep
+agent-harnesses/sessions/*
+!agent-harnesses/sessions/.gitkeep
