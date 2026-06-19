@@ -47,13 +47,13 @@ Node dict shape:
 
 - [ ] **Step 1: Write failing tests for get_spec_description**
 
-Create `tests/test_map_references.py` with all imports up front (functions will be added incrementally across tasks):
+Create `tests/test_map_references.py` (import only what exists; later tasks extend the import line):
 
 ```python
 import pytest
 import re
 from pathlib import Path
-from scripts.map_references import get_spec_description, build_tree, format_lines, cmd_run
+from scripts.map_references import get_spec_description, build_tree
 
 
 def test_get_spec_description_reads_frontmatter(tmp_path):
@@ -301,7 +301,13 @@ Output rules:
 
 - [ ] **Step 1: Write failing tests for format_lines**
 
-Append to `tests/test_map_references.py`:
+First update the import line at the top of `tests/test_map_references.py` to add `format_lines`:
+
+```python
+from scripts.map_references import get_spec_description, build_tree, format_lines
+```
+
+Then append to `tests/test_map_references.py`:
 
 ```python
 def strip_ansi(s: str) -> str:
@@ -480,7 +486,13 @@ git commit -m "feat: add format_lines renderer to map_references"
 
 - [ ] **Step 1: Write failing CLI tests**
 
-Append to `tests/test_map_references.py`:
+First update the import line at the top of `tests/test_map_references.py` to add `cmd_run`:
+
+```python
+from scripts.map_references import get_spec_description, build_tree, format_lines, cmd_run
+```
+
+Then append to `tests/test_map_references.py`:
 
 ```python
 def test_cmd_run_prints_tree_for_valid_harness(tmp_path, capsys):
