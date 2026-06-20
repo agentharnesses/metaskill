@@ -5,6 +5,8 @@ import argparse
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from scripts.disclose import peek, parse_frontmatter
 from scripts.reverse_disclose import spec_files_in
 
