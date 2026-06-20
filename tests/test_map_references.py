@@ -60,6 +60,8 @@ def test_build_tree_recurses_into_child_dirs(tmp_path):
 
     node = build_tree(tmp_path, tmp_path)
     assert node is not None
+    assert len(node["specs"]) == 1
+    assert node["specs"][0]["kind"] == "harness"
     assert len(node["children"]) == 1
     skills_node = node["children"][0]
     assert skills_node["name"] == "skills"
@@ -181,9 +183,8 @@ def test_format_lines_nested_indentation():
     skills = _make_node("skills", children=[auth])
     node = _make_node("root", children=[skills])
     raw = strip_ansi("\n".join(format_lines(node)))
-    # auth/ is nested under skills/, so it gets deeper indentation
     auth_line = [l for l in raw.splitlines() if "auth/" in l][0]
-    assert auth_line.startswith("    ")  # indented under root's child_prefix
+    assert auth_line == "    └── auth/"
 
 
 def test_format_lines_root_separator_between_items():
@@ -222,8 +223,8 @@ def test_cmd_run_shows_nested_skills(tmp_path, capsys):
 def test_cmd_run_exits_on_nonexistent_path(tmp_path, capsys):
     with pytest.raises(SystemExit):
         cmd_run(str(tmp_path / "nonexistent"))
-    out = capsys.readouterr().out
-    assert "not found" in out.lower() or "error" in out.lower()
+    err = capsys.readouterr().err
+    assert "not found" in err.lower() or "error" in err.lower()
 
 
 def test_cmd_run_exits_when_no_spec_files_found(tmp_path, capsys):
@@ -231,5 +232,5 @@ def test_cmd_run_exits_when_no_spec_files_found(tmp_path, capsys):
     empty.mkdir()
     with pytest.raises(SystemExit):
         cmd_run(str(empty))
-    out = capsys.readouterr().out
-    assert "no spec files" in out.lower() or "error" in out.lower()
+    err = capsys.readouterr().err
+    assert "no spec files" in err.lower() or "error" in err.lower()
