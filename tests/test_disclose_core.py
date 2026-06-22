@@ -4,9 +4,12 @@ from scripts.disclose import (
     parse_frontmatter,
     should_skip,
     classify,
+    detect_leaf_type,
+    load_leaf_detectors,
     file_type,
     get_description,
     peek,
+    _detector_cache,
 )
 
 
@@ -71,6 +74,7 @@ def test_should_not_skip_regular_dir(tmp_path):
 
 
 def test_classify_skill(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
     d = tmp_path / "myskill"
     d.mkdir()
     (d / "SKILL.md").touch()
@@ -87,6 +91,97 @@ def test_classify_file(tmp_path):
     f = tmp_path / "ref.md"
     f.touch()
     assert classify(f) == "file"
+
+
+# ── detect_leaf_type ─────────────────────────────────────────────────────────
+
+def test_detect_leaf_type_config_skill(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+    d = tmp_path / "my-skill"
+    d.mkdir()
+    (d / "SKILL.md").touch()
+    assert detect_leaf_type(d) == "skill"
+
+
+def test_detect_leaf_type_config_custom(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("mcp-server=MCP-SERVER.md\n")
+    d = tmp_path / "my-server"
+    d.mkdir()
+    (d / "MCP-SERVER.md").touch()
+    assert detect_leaf_type(d) == "mcp-server"
+
+
+def test_detect_leaf_type_config_no_match(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+    d = tmp_path / "plain"
+    d.mkdir()
+    assert detect_leaf_type(d) is None
+
+
+def test_detect_leaf_type_no_config_returns_none(tmp_path):
+    d = tmp_path / "my-skill"
+    d.mkdir()
+    (d / "SKILL.md").touch()
+    assert detect_leaf_type(d) is None
+
+
+def test_detect_leaf_type_explicit_harnessleaf(tmp_path):
+    d = tmp_path / "my-server"
+    d.mkdir()
+    (d / ".harnessleaf").write_text("mcp-server\n")
+    assert detect_leaf_type(d) == "mcp-server"
+
+
+def test_detect_leaf_type_explicit_wins_over_structural(tmp_path):
+    d = tmp_path / "tricky"
+    d.mkdir()
+    (d / "SKILL.md").touch()
+    (d / ".harnessleaf").write_text("mcp-server")
+    assert detect_leaf_type(d) == "mcp-server"
+
+
+def test_load_leaf_detectors_parses_key_value(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\nmcp-server=MCP-SERVER.md\n")
+    result = load_leaf_detectors(tmp_path)
+    assert result == {"skill": "SKILL.md", "mcp-server": "MCP-SERVER.md"}
+
+
+def test_load_leaf_detectors_ignores_comments_and_blanks(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("# comment\n\nskill=SKILL.md\n")
+    result = load_leaf_detectors(tmp_path)
+    assert result == {"skill": "SKILL.md"}
+
+
+def test_load_leaf_detectors_returns_none_when_absent(tmp_path):
+    assert load_leaf_detectors(tmp_path) is None
+
+
+def test_load_leaf_detectors_finds_ancestor(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+    subdir = tmp_path / "a" / "b"
+    subdir.mkdir(parents=True)
+    result = load_leaf_detectors(subdir)
+    assert result == {"skill": "SKILL.md"}
+
+
+def test_detect_leaf_type_none_for_plain_group(tmp_path):
+    d = tmp_path / "group"
+    d.mkdir()
+    assert detect_leaf_type(d) is None
+
+
+def test_classify_custom_leaf_type(tmp_path):
+    d = tmp_path / "my-server"
+    d.mkdir()
+    (d / ".harnessleaf").write_text("mcp-server")
+    assert classify(d) == "mcp-server"
+
+
+def test_get_description_custom_leaf_type(tmp_path):
+    d = tmp_path / "my-server"
+    d.mkdir()
+    (d / "MCP-SERVER.md").write_text("---\ndescription: Runs the MCP server\n---\n")
+    assert get_description(d, "mcp-server") == "Runs the MCP server"
 
 
 def test_file_type_in_subfolder(tmp_path):
@@ -124,6 +219,7 @@ def test_get_description_missing_file(tmp_path):
 
 def test_peek_mixed_directory(tmp_path):
     root = tmp_path
+    (root / ".leaf-detectors").write_text("skill=SKILL.md\n")
 
     # A skill dir
     skill = root / "my-skill"
@@ -165,6 +261,7 @@ def test_peek_items_have_ids(tmp_path):
 
 
 def test_peek_dirs_before_files(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
     (tmp_path / "aardvark.md").touch()
     d = tmp_path / "zebra"
     d.mkdir()

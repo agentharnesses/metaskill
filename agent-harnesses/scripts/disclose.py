@@ -36,9 +36,74 @@ def should_skip(entry: Path, parent: Path) -> bool:
     return False
 
 
+_detector_cache: dict[str, dict[str, str]] = {}
+
+
+def load_leaf_detectors(directory: Path) -> dict[str, str] | None:
+    """Walk up from directory to find the nearest .leaf-detectors config.
+
+    Each non-blank, non-comment line must be ``leaf_type=relative_path``.
+    The relative path is checked for existence inside the directory being
+    classified, not the directory containing the config.
+    Returns the parsed rules dict, or None if no config file was found.
+    Results are cached by config file path.
+    """
+    current = directory.resolve()
+    while True:
+        config_path = current / ".leaf-detectors"
+        key = str(config_path)
+        if key in _detector_cache:
+            return _detector_cache[key]
+        if config_path.exists():
+            rules: dict[str, str] = {}
+            try:
+                for line in config_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        rules[k.strip()] = v.strip()
+            except OSError:
+                pass
+            _detector_cache[key] = rules
+            return rules
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
+def detect_leaf_type(directory: Path) -> str | None:
+    """Return the leaf type for a directory, or None if it's a plain group.
+
+    Priority order:
+    1. Explicit: .harnessleaf — first non-empty line is the type name.
+    2. Config: nearest .leaf-detectors ancestor — first matching rule wins.
+    Directories with no matching rule are plain groups; there is no fallback scan.
+    """
+    leaf_file = directory / ".harnessleaf"
+    if leaf_file.exists():
+        try:
+            for line in leaf_file.read_text(encoding="utf-8").splitlines():
+                content = line.strip()
+                if content:
+                    return content
+        except OSError:
+            pass
+
+    detectors = load_leaf_detectors(directory)
+    if detectors is not None:
+        for leaf_type, pattern in detectors.items():
+            if (directory / pattern).exists():
+                return leaf_type
+    return None
+
+
 def classify(entry: Path) -> str:
     if entry.is_dir():
-        return "skill" if (entry / "SKILL.md").exists() else "group"
+        return detect_leaf_type(entry) or "group"
     if entry.is_file():
         return "file"
     return ""
@@ -50,10 +115,10 @@ def file_type(path: Path, root: Path) -> str:
 
 
 def get_description(path: Path, kind: str) -> str | None:
-    if kind == "skill":
-        target = path / "SKILL.md"
-    elif kind == "group":
+    if kind == "group":
         target = path / (path.name.upper() + ".md")
+    elif path.is_dir():
+        target = path / (kind.upper() + ".md")
     else:
         target = path
 
@@ -151,7 +216,9 @@ def _advance_queue(state: dict) -> list[dict]:
     """Pop directories from the queue and peek until we get items or exhaust."""
     root = Path(state["root"])
     while state["queue"]:
-        next_dir = Path(state["queue"].pop(0))
+        entry = state["queue"].pop(0)
+        next_dir = Path(entry["path"])
+        state["depth"] = entry["depth"]
         state["current_path"] = str(next_dir)
         state["current_context"] = _get_context(next_dir)
         items = peek(next_dir, root)
@@ -160,6 +227,36 @@ def _advance_queue(state: dict) -> list[dict]:
             return items
     state["current_items"] = []
     return []
+
+
+def _fork_sessions(state: dict) -> list[dict]:
+    """Create one DFS sub-session per queued entry. Returns branch descriptors."""
+    branches = []
+    for entry in state["queue"]:
+        branch_id = uuid.uuid4().hex[:8]
+        branch_state: dict = {
+            "root": state["root"],
+            "mode": "dfs",
+            "queue": [entry],
+            "resources": [],
+            "current_path": state["root"],
+            "current_items": [],
+            "current_context": None,
+            "depth": 0,
+            "parallel_width": -1,
+        }
+        _advance_queue(branch_state)
+        _save_session(branch_id, branch_state)
+        try:
+            location = str(Path(entry["path"]).relative_to(state["root"]))
+        except ValueError:
+            location = entry["path"]
+        branch_items = [
+            {k: v for k, v in i.items() if k != "path"}
+            for i in branch_state["current_items"]
+        ]
+        branches.append({"session": branch_id, "location": location, "items": branch_items})
+    return branches
 
 
 # ── Output helpers ──────────────────────────────────────────────────────────
@@ -184,16 +281,32 @@ def _print_exploring(session_id: str, state: dict, items: list[dict]) -> None:
 
 
 def _print_complete(session_id: str, state: dict) -> None:
+    resources = [{**r, "session": session_id} for r in state["resources"]]
     print(json.dumps({
         "status": "complete",
         "session": session_id,
-        "resources": state["resources"],
+        "resources": resources,
     }, indent=2))
+
+
+def _print_parallelize(session_id: str, state: dict, branches: list[dict]) -> None:
+    out: dict = {
+        "status": "parallelize",
+        "session": session_id,
+        "hint": (
+            "Explore each branch independently; run in parallel if your framework "
+            "supports it, otherwise process sequentially."
+        ),
+        "branches": branches,
+    }
+    if state["resources"]:
+        out["resources"] = [{**r, "session": session_id} for r in state["resources"]]
+    print(json.dumps(out, indent=2))
 
 
 # ── Commands ────────────────────────────────────────────────────────────────
 
-def cmd_start(harness_path: str, mode: str) -> None:
+def cmd_start(harness_path: str, mode: str, max_parallel: int = 4) -> None:
     root = Path(harness_path).resolve()
     if not root.exists():
         print(json.dumps({"error": f"Path not found: {harness_path}"}))
@@ -210,6 +323,8 @@ def cmd_start(harness_path: str, mode: str) -> None:
         "current_path": str(root),
         "current_items": items,
         "current_context": None,
+        "depth": 0,
+        "parallel_width": max_parallel if mode == "hybrid" else -1,
     }
 
     _save_session(session_id, state)
@@ -226,14 +341,15 @@ def cmd_select(session_id: str, selection: str) -> None:
             selected_ids.add(int(part))
 
     by_id = {item["id"]: item for item in state["current_items"]}
-    new_groups: list[str] = []
+    next_depth = state["depth"] + 1
+    new_groups: list[dict] = []
 
     for sel_id in sorted(selected_ids):
         item = by_id.get(sel_id)
         if not item:
             continue
         if item["type"] == "group":
-            new_groups.append(item["path"])
+            new_groups.append({"path": item["path"], "depth": next_depth})
         else:
             resource: dict = {
                 "type": item["type"],
@@ -247,7 +363,19 @@ def cmd_select(session_id: str, selection: str) -> None:
     if state["mode"] == "dfs":
         state["queue"] = new_groups + state["queue"]
     else:
-        state["queue"] = state["queue"] + new_groups
+        state["queue"] = state["queue"] + new_groups  # bfs and hybrid
+
+    # Hybrid parallelization trigger: fork once queue is wide enough to meet the target.
+    # BFS keeps running until len(queue) >= parallel_width, so shallow harnesses get
+    # explored deeper before splitting rather than forking too early.
+    if (
+        state["mode"] == "hybrid"
+        and len(state["queue"]) >= state["parallel_width"]
+    ):
+        branches = _fork_sessions(state)
+        _delete_session(session_id)
+        _print_parallelize(session_id, state, branches)
+        return
 
     items = _advance_queue(state)
 
@@ -270,7 +398,14 @@ def cmd_cancel(session_id: str) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description="Harness progressive disclosure explorer")
     p.add_argument("harness_path", nargs="?", help="Path to harness root")
-    p.add_argument("--mode", choices=["bfs", "dfs"], default="bfs")
+    p.add_argument("--mode", choices=["bfs", "dfs", "hybrid"], default="bfs")
+    p.add_argument(
+        "--max-parallel",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Fork into parallel branches once the queue reaches N items (hybrid mode only)",
+    )
     p.add_argument("--session", metavar="ID")
     p.add_argument("--select", metavar="IDS")
     p.add_argument("--cancel", action="store_true")
@@ -285,7 +420,7 @@ def main() -> None:
             print(json.dumps({"error": "Use --select or --cancel with --session"}))
             sys.exit(1)
     elif args.harness_path:
-        cmd_start(args.harness_path, args.mode)
+        cmd_start(args.harness_path, args.mode, args.max_parallel)
     else:
         p.print_help()
         sys.exit(1)

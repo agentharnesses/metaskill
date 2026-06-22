@@ -5,29 +5,69 @@ description: Progressive disclosure explorer for Agent Harnesses — enables age
 
 Use this skill when you are pointed to a harness directory and need to discover which skills or references are relevant to your current task. It exposes only what you need, one layer at a time, so you don't flood your context with irrelevant content.
 
-## Skills
+## Scripts
 
+- `scripts/summarize.py` — print the tree and all spec descriptions; use this first to orient before starting a session
 - `scripts/disclose.py` — session-based harness explorer
 - `scripts/reverse_disclose.py` — find all .md files above a path that reference it
-- `scripts/map_references.py` — print a visual tree of all spec files in a harness
+- `scripts/map_references.py` — print a visual tree of all spec files in a harness (tree only, no descriptions)
 
 ## How to Use
+
+### 0. Summarize the harness (do this first)
+
+Before starting a disclosure session, run the summarize script to get a full picture of the harness structure and what each spec file is for:
+
+```
+python scripts/summarize.py <harness_path>
+```
+
+Output: the visual tree with inline short descriptions, followed by a flat list of every spec file with its full description. Use this to decide which mode and branches to target in the session that follows.
+
+```
+my-harness/
+├── [harness]  HARNESS.md  — Root harness for the payments platform
+│
+└── skills/
+    ├── [routing]  SKILLS.md  — Index of all available skills
+    ├── auth/
+    │   └── [skill]  SKILL.md  — Handles login, OAuth, and session management
+    └── payments/
+        └── [skill]  SKILL.md  — Checkout flow and refund handling
+
+────────────────────────────────────────────────────────────
+
+[harness]  HARNESS.md
+  Root harness for the payments platform
+
+[routing]  skills/SKILLS.md
+  Index of all available skills
+
+[skill]  skills/auth/SKILL.md
+  Handles login, OAuth, and session management
+
+[skill]  skills/payments/SKILL.md
+  Checkout flow and refund handling
+```
 
 ### 1. Start a session
 
 ```
-python scripts/disclose.py <harness_path> [--mode bfs|dfs]
+python scripts/disclose.py <harness_path> [--mode bfs|dfs|hybrid] [--max-parallel N]
 ```
 
-`bfs` (default) explores breadth-first — exhausts each level before going deeper. `dfs` dives into the first relevant group immediately.
+`bfs` (default) explores breadth-first — exhausts each level before going deeper. `dfs` dives into the first relevant group immediately. `hybrid` does BFS until the frontier is wide enough, then forks into parallel branch sessions.
 
 **Choosing a mode:**
-- Use `bfs` when exploring an unfamiliar harness or when your task could involve multiple areas. You'll see all sibling groups before committing to any branch, which prevents missing something important in a folder you never peek.
+- Use `hybrid` when you can spawn sub-agents. It keeps doing BFS until the queue holds at least N groups, then forks each into an independent DFS session so sub-agents can explore in parallel.
+- Use `bfs` when you cannot spawn sub-agents but the task could span multiple areas. You'll see all sibling groups before committing to any branch, which prevents missing something important in a folder you never peek.
 - Use `dfs` when you already know which branch contains what you need (e.g., you've been told "the auth skill is under `skills/auth/`"). It gets you there without surveying siblings first.
 
-When in doubt, use `bfs`.
+**When in doubt: use `hybrid` if you can spawn sub-agents, `bfs` otherwise.**
 
-The response is JSON:
+The response is JSON with one of three statuses:
+
+**`"exploring"`** — normal step, select from the listed items:
 
 ```json
 {
@@ -44,6 +84,43 @@ The response is JSON:
 ```
 
 `context` appears when the current directory has a summary file — read it to orient yourself before selecting.
+
+**`"parallelize"`** — emitted by hybrid mode when the BFS phase is complete. Each entry in `branches` is a pre-seeded DFS session already in the `exploring` state — `items` shows exactly what it is waiting for a `--select` decision on:
+
+```json
+{
+  "status": "parallelize",
+  "session": "a3f2c1b0",
+  "hint": "Explore each branch independently; run in parallel if your framework supports it, otherwise process sequentially.",
+  "branches": [
+    {
+      "session": "b1c2d3e4",
+      "location": "skills/auth",
+      "items": [
+        {"id": 1, "type": "skill", "name": "login",   "description": "..."},
+        {"id": 2, "type": "skill", "name": "oauth",   "description": "..."}
+      ]
+    },
+    {
+      "session": "f5a6b7c8",
+      "location": "skills/payments",
+      "items": [
+        {"id": 1, "type": "skill", "name": "checkout", "description": "..."}
+      ]
+    }
+  ],
+  "resources": [...]
+}
+```
+
+`resources` only appears when some resources were already found during the BFS phase; collect them alongside branch results. The parent session is deleted when this is emitted.
+
+**How to handle `"parallelize"`:**
+- Each branch is already in `exploring` state. Do **not** call `--select ""` or issue any start command — call `--select <ids>` immediately using the `items` list in the branch descriptor.
+- If your framework supports parallel sub-agents: spawn one sub-agent per branch. Pass the branch `session` ID, the `items` list, and your task description so the sub-agent can make an informed first `--select` decision without any additional discovery step. Collect all `"complete"` responses and merge their `resources` lists.
+- If your framework is sequential: process each branch session one at a time using the normal `--select` loop until each reaches `"complete"`.
+
+**`"complete"`** — all queued directories exhausted:
 
 Item types:
 - `"group"` — a subdirectory; selecting it recurses into it
@@ -69,11 +146,13 @@ Continue until `status` is `"complete"`:
   "status": "complete",
   "session": "a3f2c1b0",
   "resources": [
-    {"type": "skill",      "name": "my-skill", "path": "/abs/path/to/skills/my-skill"},
-    {"type": "references", "name": "guide.md", "path": "/abs/path/to/references/guide.md"}
+    {"type": "skill",      "name": "my-skill", "path": "/abs/path/to/skills/my-skill",   "session": "a3f2c1b0"},
+    {"type": "references", "name": "guide.md", "path": "/abs/path/to/references/guide.md", "session": "a3f2c1b0"}
   ]
 }
 ```
+
+Every resource carries a `"session"` field identifying which session found it. This lets you trace results back to their origin after merging resources from multiple branch sessions.
 
 ### 4. Load your resources
 

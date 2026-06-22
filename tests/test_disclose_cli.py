@@ -16,6 +16,8 @@ def sessions_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def simple_harness(tmp_path):
     """A minimal harness: one skill, one reference file."""
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+
     skills = tmp_path / "skills"
     skills.mkdir()
     skill = skills / "my-skill"
@@ -32,6 +34,8 @@ def simple_harness(tmp_path):
 @pytest.fixture
 def nested_harness(tmp_path):
     """A harness with a group containing two skills."""
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+
     skills = tmp_path / "skills"
     skills.mkdir()
     (skills / "SKILLS.md").write_text("---\ndescription: All skills\n---\nRouting info here.")
@@ -209,3 +213,198 @@ def test_resource_type_matches_top_level_folder(simple_harness, sessions_dir, ca
 
     ref_resource = next(r for r in final["resources"] if r["name"] == "guide.md")
     assert ref_resource["type"] == "references"
+
+
+# ── Session stamping ────────────────────────────────────────────────────────
+
+def test_complete_resources_stamped_with_session(simple_harness, sessions_dir, capsys):
+    disclose.cmd_start(str(simple_harness), "bfs")
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    refs_item = next(i for i in start_out["items"] if i["name"] == "references")
+    disclose.cmd_select(sid, str(refs_item["id"]))
+    out = json.loads(capsys.readouterr().out)
+
+    guide_item = next(i for i in out["items"] if i["name"] == "guide.md")
+    disclose.cmd_select(sid, str(guide_item["id"]))
+    final = json.loads(capsys.readouterr().out)
+
+    if final["status"] == "exploring":
+        disclose.cmd_select(sid, "")
+        final = json.loads(capsys.readouterr().out)
+
+    assert final["status"] == "complete"
+    for r in final["resources"]:
+        assert r["session"] == sid
+
+
+# ── Hybrid mode ─────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def wide_harness(tmp_path):
+    """Two top-level skill groups plus a reference file — good for parallel branching."""
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+
+    for name in ("auth", "payments"):
+        d = tmp_path / "skills" / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"---\ndescription: {name.title()} skill\n---\n")
+
+    refs = tmp_path / "references"
+    refs.mkdir()
+    (refs / "guide.md").write_text("---\ndescription: Usage guide\n---\n")
+
+    return tmp_path
+
+
+def test_hybrid_emits_parallelize(wide_harness, sessions_dir, capsys):
+    disclose.cmd_start(str(wide_harness), "hybrid", max_parallel=1)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    all_ids = ",".join(str(i["id"]) for i in start_out["items"])
+    disclose.cmd_select(sid, all_ids)
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["status"] == "parallelize"
+    assert out["session"] == sid
+    assert len(out["branches"]) == len(start_out["items"])
+
+
+def test_hybrid_branch_sessions_are_created(wide_harness, sessions_dir, capsys):
+    disclose.cmd_start(str(wide_harness), "hybrid", max_parallel=1)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    all_ids = ",".join(str(i["id"]) for i in start_out["items"])
+    disclose.cmd_select(sid, all_ids)
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["status"] == "parallelize"
+    for branch in out["branches"]:
+        assert (sessions_dir / f"harness_{branch['session']}.json").exists()
+        assert "items" in branch
+
+
+def test_hybrid_parent_session_deleted_after_fork(wide_harness, sessions_dir, capsys):
+    disclose.cmd_start(str(wide_harness), "hybrid", max_parallel=1)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    all_ids = ",".join(str(i["id"]) for i in start_out["items"])
+    disclose.cmd_select(sid, all_ids)
+    capsys.readouterr()
+
+    assert not (sessions_dir / f"harness_{sid}.json").exists()
+
+
+def test_hybrid_branch_items_match_session_state(wide_harness, sessions_dir, capsys):
+    """Branch descriptor items must match the session's current_items so sub-agents
+    can call --select immediately without any extra discovery step."""
+    disclose.cmd_start(str(wide_harness), "hybrid", max_parallel=1)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    all_ids = ",".join(str(i["id"]) for i in start_out["items"])
+    disclose.cmd_select(sid, all_ids)
+    parallelize_out = json.loads(capsys.readouterr().out)
+
+    for branch in parallelize_out["branches"]:
+        branch_state = json.loads(
+            (sessions_dir / f"harness_{branch['session']}.json").read_text()
+        )
+        state_item_ids = {i["id"] for i in branch_state["current_items"]}
+        resp_item_ids  = {i["id"] for i in branch["items"]}
+        assert resp_item_ids == state_item_ids
+        # path must not leak into the response items
+        for item in branch["items"]:
+            assert "path" not in item
+
+
+def test_hybrid_branch_can_be_continued(wide_harness, sessions_dir, capsys):
+    disclose.cmd_start(str(wide_harness), "hybrid", max_parallel=1)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    all_ids = ",".join(str(i["id"]) for i in start_out["items"])
+    disclose.cmd_select(sid, all_ids)
+    parallelize_out = json.loads(capsys.readouterr().out)
+
+    branch = parallelize_out["branches"][0]
+    branch_sid = branch["session"]
+
+    # Use items from the branch descriptor directly — no session file read needed
+    all_branch_ids = ",".join(str(i["id"]) for i in branch["items"])
+    disclose.cmd_select(branch_sid, all_branch_ids)
+    final = json.loads(capsys.readouterr().out)
+
+    assert final["status"] in ("complete", "exploring")
+
+
+def test_hybrid_bfs_phase_resources_in_parallelize(wide_harness, sessions_dir, capsys):
+    """Resources found during BFS (before fork) appear in the parallelize response."""
+    # Add a direct skill at root level so it's found during BFS
+    root_skill = wide_harness / "root-skill"
+    root_skill.mkdir()
+    (root_skill / "SKILL.md").write_text("---\ndescription: Root-level skill\n---\n")
+
+    disclose.cmd_start(str(wide_harness), "hybrid", max_parallel=1)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    # Select the root skill (resource) and the groups (will trigger fork)
+    all_ids = ",".join(str(i["id"]) for i in start_out["items"])
+    disclose.cmd_select(sid, all_ids)
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["status"] == "parallelize"
+    assert "resources" in out
+    resource_names = [r["name"] for r in out["resources"]]
+    assert "root-skill" in resource_names
+    for r in out["resources"]:
+        assert r["session"] == sid
+
+
+@pytest.fixture
+def funnel_harness(tmp_path):
+    """root → top/ (group) → {A/ (group), B/ (group)} → each has one skill inside.
+
+    The harness is narrow at the root (one group) and widens one level down.
+    Used to verify that hybrid mode keeps BFS-ing past narrow levels until the
+    queue is wide enough to meet the max_parallel threshold.
+    """
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
+
+    for name in ("A", "B"):
+        skill = tmp_path / "top" / name / f"{name.lower()}-skill"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"---\ndescription: {name} skill\n---\n")
+    return tmp_path
+
+
+def test_hybrid_forks_when_queue_wide_enough(funnel_harness, sessions_dir, capsys):
+    """BFS keeps going past a narrow level and forks once the queue has 2+ groups.
+
+    funnel_harness: root → top/ → {A/, B/} → each has one skill
+
+    Selecting top (queue=1) stays below threshold; advancing into top shows A and B.
+    Selecting both (queue=2) meets the threshold and triggers the fork.
+    """
+    disclose.cmd_start(str(funnel_harness), "hybrid", max_parallel=2)
+    start_out = json.loads(capsys.readouterr().out)
+    sid = start_out["session"]
+
+    # Queue grows to 1 (top) — below threshold, keep exploring
+    top_item = next(i for i in start_out["items"] if i["name"] == "top")
+    disclose.cmd_select(sid, str(top_item["id"]))
+    out1 = json.loads(capsys.readouterr().out)
+    assert out1["status"] == "exploring"
+    assert out1["location"] == "top"
+
+    # Select A and B (both groups) — queue grows to 2, meets threshold → fork
+    all_ids = ",".join(str(i["id"]) for i in out1["items"])
+    disclose.cmd_select(sid, all_ids)
+    out2 = json.loads(capsys.readouterr().out)
+    assert out2["status"] == "parallelize"
+    assert len(out2["branches"]) == 2

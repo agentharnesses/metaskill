@@ -13,15 +13,17 @@ from scripts.reverse_disclose import spec_files_in
 _ANSI_BOLD_RED = "\033[1;31m"
 _ANSI_YELLOW   = "\033[33m"
 _ANSI_CYAN     = "\033[36m"
+_ANSI_GREEN    = "\033[32m"
 _ANSI_RESET    = "\033[0m"
 
 _KIND_COLOR = {
     "harness": _ANSI_BOLD_RED,
     "routing": _ANSI_YELLOW,
     "skill":   _ANSI_CYAN,
+    "ref":     _ANSI_GREEN,
 }
 
-_BADGE_WIDTH = 9  # len("[harness]")
+_SKIP_DIRS = {"node_modules", "__pycache__", "dist", "build", ".venv", "venv"}
 
 
 def get_spec_description(path: Path) -> str | None:
@@ -42,9 +44,8 @@ def get_spec_description(path: Path) -> str | None:
 
 def _badge(kind: str) -> str:
     label = f"[{kind}]"
-    padded = label.ljust(_BADGE_WIDTH)
     color = _KIND_COLOR.get(kind, "")
-    return f"{color}{padded}{_ANSI_RESET}"
+    return f"{color}{label}{_ANSI_RESET}"
 
 
 def _truncate(s: str, n: int) -> str:
@@ -71,11 +72,9 @@ def format_lines(node: dict, prefix: str = "", is_last: bool = True, depth: int 
         if kind == "spec":
             badge = _badge(item["kind"])
             name = item["name"]
-            desc = _truncate(item.get("description", ""), 60)
-            line = f"{child_prefix}{item_connector}{badge}  {name}"
-            if desc:
-                line += f"  {desc}"
-            lines.append(line)
+            desc = item.get("description", "")
+            suffix = f"  — {_truncate(desc, 60)}" if desc else ""
+            lines.append(f"{child_prefix}{item_connector}{badge}  {name}{suffix}")
         else:
             lines.extend(format_lines(item, child_prefix, item_is_last, depth + 1))
 
@@ -100,14 +99,31 @@ def build_tree(directory: Path, root: Path) -> dict | None:
             node_spec["description"] = desc
         specs.append(node_spec)
 
+    existing_paths = {s["path"] for s in specs}
     child_nodes = []
     for item in peek(directory, root):
-        if item["type"] not in ("group", "skill"):
-            continue
         child_path = Path(item["path"])
-        child_node = build_tree(child_path, root)
-        if child_node is not None:
-            child_nodes.append(child_node)
+        if child_path.is_dir():
+            if child_path.name in _SKIP_DIRS:
+                continue
+            child_node = build_tree(child_path, root)
+            if child_node is not None:
+                child_nodes.append(child_node)
+        elif child_path.is_file() and item["name"].endswith(".md"):
+            if item["path"] in existing_paths:
+                continue
+            routing_name = directory.name.upper() + ".md"
+            is_routing = item["name"] == routing_name or item["name"] == "SKILLS.md"
+            kind = "routing" if is_routing else "ref"
+            node_spec: dict = {
+                "kind": kind,
+                "path": item["path"],
+                "name": item["name"],
+            }
+            if item.get("description"):
+                node_spec["description"] = item["description"]
+            specs.append(node_spec)
+            existing_paths.add(item["path"])
 
     if not specs and not child_nodes:
         return None

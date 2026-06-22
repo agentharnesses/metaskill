@@ -51,6 +51,7 @@ def test_build_tree_returns_none_for_empty_dir(tmp_path):
 
 
 def test_build_tree_recurses_into_child_dirs(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
     (tmp_path / "HARNESS.md").touch()
     skills = tmp_path / "skills"
     skills.mkdir()

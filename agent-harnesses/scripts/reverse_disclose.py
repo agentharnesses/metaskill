@@ -6,6 +6,10 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from scripts.disclose import detect_leaf_type
+
 
 def find_root(target: Path) -> Path:
     """Walk up from target's parent to find the nearest ancestor with HARNESS.md."""
@@ -42,11 +46,13 @@ def collect_ancestors(target: Path, root: Path) -> list[Path]:
 def spec_files_in(directory: Path, exclude: Path | None = None) -> list[dict]:
     """Return spec-named files that exist in directory, with their kind."""
     exclude_resolved = exclude.resolve() if exclude else None
+    leaf_type = detect_leaf_type(directory)
     candidates = [
         ("harness", directory / "HARNESS.md"),
         ("routing", directory / (directory.name.upper() + ".md")),
-        ("skill",   directory / "SKILL.md"),
     ]
+    if leaf_type:
+        candidates.append((leaf_type, directory / (leaf_type.upper() + ".md")))
     found = []
     seen_paths: set[Path] = set()
     for kind, path in candidates:

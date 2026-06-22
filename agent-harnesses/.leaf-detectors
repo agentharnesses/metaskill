@@ -1,0 +1,4 @@
+# Leaf type detectors for this harness.
+# Format: leaf_type=relative_path
+# A directory containing the specified path is treated as a leaf of that type.
+skill=SKILL.md

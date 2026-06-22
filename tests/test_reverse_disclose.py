@@ -75,6 +75,7 @@ def test_spec_files_in_finds_routing_file(tmp_path):
 
 
 def test_spec_files_in_finds_skill_md(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
     skill_dir = tmp_path / "my-skill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").touch()
@@ -95,6 +96,24 @@ def test_spec_files_in_empty_when_none_present(tmp_path):
     subdir = tmp_path / "empty"
     subdir.mkdir()
     assert spec_files_in(subdir) == []
+
+
+def test_spec_files_in_finds_config_custom_leaf(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("mcp-server=MCP-SERVER.md\n")
+    d = tmp_path / "my-server"
+    d.mkdir()
+    (d / "MCP-SERVER.md").touch()
+    found = spec_files_in(d)
+    assert any(e["kind"] == "mcp-server" for e in found)
+
+
+def test_spec_files_in_finds_harnessleaf_type(tmp_path):
+    d = tmp_path / "my-server"
+    d.mkdir()
+    (d / ".harnessleaf").write_text("mcp-server")
+    (d / "MCP-SERVER.md").touch()
+    found = spec_files_in(d)
+    assert any(e["kind"] == "mcp-server" for e in found)
 
 
 def test_spec_files_in_multiple_kinds(tmp_path):
@@ -141,6 +160,7 @@ def test_scan_ancestors_finds_routing_in_parent(tmp_path):
 
 
 def test_scan_ancestors_finds_skill_md_in_parent(tmp_path):
+    (tmp_path / ".leaf-detectors").write_text("skill=SKILL.md\n")
     skill_dir = tmp_path / "auth"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").touch()
