@@ -18,6 +18,7 @@ venv/
 
 # Superpowers
 .superpowers/
+docs/superpowers/
 
 # IDE / editor
 .vscode/
