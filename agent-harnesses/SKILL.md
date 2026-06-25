@@ -10,7 +10,36 @@ Use this skill when you are pointed to a harness directory and need to discover 
 - `scripts/summarize.py` — print the tree and all spec descriptions; use this first to orient before starting a session
 - `scripts/disclose.py` — session-based harness explorer
 - `scripts/reverse_disclose.py` — find all .md files above a path that reference it
-- `scripts/map_references.py` — print a visual tree of all spec files in a harness (tree only, no descriptions)
+- `scripts/map_references.py` — print a visual tree of all spec files in a harness with inline short descriptions
+
+## Leaf Type Classification
+
+Directories in a harness are either a **group** (plain subdirectory) or a **leaf** (a named type such as `"skill"` or `"mcp-server"`). The `type` field in `disclose.py` item responses reflects this.
+
+Two mechanisms control leaf detection, checked in priority order:
+
+**1. `.harnessleaf` file (explicit override)**
+A directory containing a `.harnessleaf` file is a leaf. The first non-empty line is the type name:
+
+```
+mcp-server
+```
+
+**2. `.leaf-detectors` config (structural rules)**
+A `.leaf-detectors` file anywhere in the ancestor chain defines rules. Each non-comment line is `leaf_type=relative_path`. A directory is classified as that `leaf_type` if the specified path exists inside it:
+
+```
+skill=SKILL.md
+mcp-server=MCP-SERVER.md
+```
+
+The nearest ancestor's config applies. `.harnessleaf` always beats `.leaf-detectors`.
+
+If neither mechanism matches, the directory is a plain `"group"`.
+
+**Description source for leaf directories:** `disclose.py` looks for `<LEAF-TYPE-UPPER>.md` inside the directory (e.g. `SKILL.md` for type `skill`, `MCP-SERVER.md` for type `mcp-server`).
+
+---
 
 ## How to Use
 
@@ -123,8 +152,8 @@ The response is JSON with one of three statuses:
 **`"complete"`** — all queued directories exhausted:
 
 Item types:
-- `"group"` — a subdirectory; selecting it recurses into it
-- `"skill"` — a skill directory; selecting it queues it as a result (read `<path>/SKILL.md`)
+- `"group"` — a plain subdirectory; selecting it recurses into it
+- any leaf type (e.g. `"skill"`, `"mcp-server"`) — a leaf directory; selecting it queues it as a result; read `<path>/<LEAF-TYPE-UPPER>.md` (e.g. `SKILL.md`, `MCP-SERVER.md`)
 - anything else (e.g. `"references"`) — a file resource; selecting it queues it as a result
 
 ### 2. Select relevant items
@@ -156,7 +185,7 @@ Every resource carries a `"session"` field identifying which session found it. T
 
 ### 4. Load your resources
 
-- For `skill` entries: read `<path>/SKILL.md`
+- For leaf type entries (e.g. `skill`, `mcp-server`): read `<path>/<LEAF-TYPE-UPPER>.md` (e.g. `<path>/SKILL.md`, `<path>/MCP-SERVER.md`)
 - For file entries: read `<path>` directly
 
 ### Cancel a session
@@ -209,6 +238,6 @@ python scripts/reverse_disclose.py <target_path> [--root <harness_root>]
 
 - `self` — present only when the target is a `.md` file
 - `references` — each ancestor `.md` file that links to the target; each entry has:
-  - `kind` — `"routing"` for SKILLS.md index files, `"harness"` for HARNESS.md
+  - `kind` — `"harness"` for HARNESS.md, `"routing"` for index files (e.g. SKILLS.md), or a leaf type (e.g. `"skill"`, `"mcp-server"`) when the ancestor directory is itself a leaf
   - `path` — absolute path to the referencing file
 - Results are ordered nearest ancestor first
