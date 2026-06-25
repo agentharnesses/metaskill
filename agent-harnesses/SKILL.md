@@ -167,6 +167,20 @@ python scripts/disclose.py --session <id> --cancel
 
 ---
 
+## Harness Maintenance
+
+Whenever you make a structural change to a harness — adding, moving, renaming, or removing any skill, reference, document, or directory — routing files (`SKILLS.md` indexes, `HARNESS.md`) may need to be updated. Use `reverse_disclose.py` to find which files are affected.
+
+**Before any structural change:** run `reverse_disclose.py` on the target to find every routing file that currently links to it. Those files will need updating.
+
+**After any structural change:** run `reverse_disclose.py` on the new path to confirm it is correctly referenced. If `references` is empty and you expected links, a routing file was missed — go back and update it.
+
+For a brand new file with no existing links, run `reverse_disclose.py` on a sibling file in the same directory to discover which routing files cover that level, then add entries for the new file to each of those.
+
+Never leave a routing file pointing to a stale path, and never add a file that nothing references — both break discoverability.
+
+---
+
 ## Reverse Disclosure
 
 Use `scripts/reverse_disclose.py` for maintenance: given a file or directory, find every `.md` file above it (in ancestor directories, up to the harness root) that contains a markdown link to it.
