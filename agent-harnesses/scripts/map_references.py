@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.disclose import peek, parse_frontmatter
+from scripts.disclose import peek, parse_frontmatter, find_top_level_dir_name
 from scripts.reverse_disclose import spec_files_in
 
 _ANSI_BOLD_RED = "\033[1;31m"
@@ -85,7 +85,7 @@ def format_lines(node: dict, prefix: str = "", is_last: bool = True, depth: int 
 
 
 def build_tree(directory: Path, root: Path) -> dict | None:
-    raw_specs = spec_files_in(directory)
+    raw_specs = spec_files_in(directory, root)
     specs = []
     for s in raw_specs:
         path = Path(s["path"])
@@ -112,8 +112,8 @@ def build_tree(directory: Path, root: Path) -> dict | None:
         elif child_path.is_file() and item["name"].endswith(".md"):
             if item["path"] in existing_paths:
                 continue
-            routing_name = directory.name.upper() + ".md"
-            is_routing = item["name"] == routing_name or item["name"] == "SKILLS.md"
+            routing_name = find_top_level_dir_name(directory, root).upper() + ".md"
+            is_routing = item["name"] == routing_name
             kind = "routing" if is_routing else "ref"
             node_spec: dict = {
                 "kind": kind,

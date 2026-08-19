@@ -7,6 +7,7 @@ from scripts.disclose import (
     detect_leaf_type,
     load_leaf_detectors,
     file_type,
+    find_top_level_dir_name,
     get_description,
     peek,
     _detector_cache,
@@ -43,13 +44,13 @@ def test_parse_frontmatter_incomplete():
 def test_should_skip_hidden(tmp_path):
     f = tmp_path / ".hidden"
     f.touch()
-    assert should_skip(f, tmp_path) is True
+    assert should_skip(f, tmp_path, tmp_path) is True
 
 
 def test_should_skip_harness_md(tmp_path):
     f = tmp_path / "HARNESS.md"
     f.touch()
-    assert should_skip(f, tmp_path) is True
+    assert should_skip(f, tmp_path, tmp_path) is True
 
 
 def test_should_skip_own_summary(tmp_path):
@@ -58,19 +59,86 @@ def test_should_skip_own_summary(tmp_path):
     skills_dir.mkdir()
     skills_md = skills_dir / "SKILLS.md"
     skills_md.touch()
-    assert should_skip(skills_md, skills_dir) is True
+    assert should_skip(skills_md, skills_dir, tmp_path) is True
+
+
+def test_should_skip_top_level_dir_name_inherited_from_ancestor(tmp_path):
+    # A nested group under skills/ still uses SKILLS.md, not its own name
+    nested = tmp_path / "skills" / "maintenance"
+    nested.mkdir(parents=True)
+    skills_md = nested / "SKILLS.md"
+    skills_md.touch()
+    assert should_skip(skills_md, nested, tmp_path) is True
+    maintenance_md = nested / "MAINTENANCE.md"
+    maintenance_md.touch()
+    assert should_skip(maintenance_md, nested, tmp_path) is False
+
+
+def test_should_skip_top_level_dir_name_resets_at_nested_harness_md(tmp_path):
+    # Once a nested HARNESS.md is present, routing-filename propagation
+    # resets from that boundary instead of continuing to inherit "skills"
+    plugin = tmp_path / "skills" / "plugin-x"
+    plugin.mkdir(parents=True)
+    (plugin / "HARNESS.md").touch()
+    nested = plugin / "tools"
+    nested.mkdir()
+    tools_md = nested / "TOOLS.md"
+    tools_md.touch()
+    assert should_skip(tools_md, nested, tmp_path) is True
+    skills_md = nested / "SKILLS.md"
+    skills_md.touch()
+    assert should_skip(skills_md, nested, tmp_path) is False
 
 
 def test_should_not_skip_regular_file(tmp_path):
     f = tmp_path / "schema.md"
     f.touch()
-    assert should_skip(f, tmp_path) is False
+    assert should_skip(f, tmp_path, tmp_path) is False
 
 
 def test_should_not_skip_regular_dir(tmp_path):
     d = tmp_path / "myskill"
     d.mkdir()
-    assert should_skip(d, tmp_path) is False
+    assert should_skip(d, tmp_path, tmp_path) is False
+
+
+# ── find_top_level_dir_name ─────────────────────────────────────────────────
+
+def test_find_top_level_dir_name_at_root(tmp_path):
+    assert find_top_level_dir_name(tmp_path, tmp_path) == tmp_path.name
+
+
+def test_find_top_level_dir_name_immediate_child(tmp_path):
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    assert find_top_level_dir_name(skills, tmp_path) == "skills"
+
+
+def test_find_top_level_dir_name_propagates_through_nesting(tmp_path):
+    nested = tmp_path / "skills" / "maintenance" / "deep"
+    nested.mkdir(parents=True)
+    assert find_top_level_dir_name(nested, tmp_path) == "skills"
+
+
+def test_find_top_level_dir_name_resets_at_nested_harness_md(tmp_path):
+    plugin = tmp_path / "skills" / "plugin-x"
+    plugin.mkdir(parents=True)
+    (plugin / "HARNESS.md").touch()
+    nested = plugin / "tools" / "deep"
+    nested.mkdir(parents=True)
+    assert find_top_level_dir_name(nested, tmp_path) == "tools"
+
+
+def test_find_top_level_dir_name_boundary_dir_itself_resets(tmp_path):
+    # The nested-HARNESS.md directory's own direct children establish the
+    # new top-level directory, even though the boundary dir itself keeps its
+    # parent's name.
+    plugin = tmp_path / "skills" / "plugin-x"
+    plugin.mkdir(parents=True)
+    (plugin / "HARNESS.md").touch()
+    tools = plugin / "tools"
+    tools.mkdir()
+    assert find_top_level_dir_name(tools, tmp_path) == "tools"
 
 
 def test_classify_skill(tmp_path):
@@ -181,7 +249,7 @@ def test_get_description_custom_leaf_type(tmp_path):
     d = tmp_path / "my-server"
     d.mkdir()
     (d / "MCP-SERVER.md").write_text("---\ndescription: Runs the MCP server\n---\n")
-    assert get_description(d, "mcp-server") == "Runs the MCP server"
+    assert get_description(d, "mcp-server", tmp_path) == "Runs the MCP server"
 
 
 def test_file_type_in_subfolder(tmp_path):
@@ -201,20 +269,39 @@ def test_get_description_from_frontmatter(tmp_path):
     skill_dir = tmp_path / "myskill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("---\ndescription: Does the thing\n---\nBody")
-    assert get_description(skill_dir, "skill") == "Does the thing"
+    assert get_description(skill_dir, "skill", tmp_path) == "Does the thing"
 
 
 def test_get_description_fallback_to_body(tmp_path):
     skill_dir = tmp_path / "myskill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("---\nname: foo\n---\n# Heading\nFirst real line")
-    assert get_description(skill_dir, "skill") == "First real line"
+    assert get_description(skill_dir, "skill", tmp_path) == "First real line"
 
 
 def test_get_description_missing_file(tmp_path):
     d = tmp_path / "ghost"
     d.mkdir()
-    assert get_description(d, "skill") is None
+    assert get_description(d, "skill", tmp_path) is None
+
+
+def test_get_description_group_uses_top_level_dir_name_not_own_name(tmp_path):
+    # A "group" directory nested under skills/ must be described by SKILLS.md,
+    # not a file named after its own directory name.
+    nested = tmp_path / "skills" / "maintenance"
+    nested.mkdir(parents=True)
+    (nested / "SKILLS.md").write_text("---\ndescription: Upkeep skills\n---\n")
+    assert get_description(nested, "group", tmp_path) == "Upkeep skills"
+
+
+def test_get_description_group_resets_at_nested_harness_md(tmp_path):
+    plugin = tmp_path / "skills" / "plugin-x"
+    plugin.mkdir(parents=True)
+    (plugin / "HARNESS.md").touch()
+    nested = plugin / "tools"
+    nested.mkdir()
+    (nested / "TOOLS.md").write_text("---\ndescription: Plugin tools\n---\n")
+    assert get_description(nested, "group", tmp_path) == "Plugin tools"
 
 
 def test_peek_mixed_directory(tmp_path):

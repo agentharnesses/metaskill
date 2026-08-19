@@ -94,6 +94,37 @@ def test_build_tree_routing_file(tmp_path):
     assert node["specs"][0]["description"] == "Skill index"
 
 
+def test_build_tree_routing_resets_at_nested_harness_md(tmp_path):
+    (tmp_path / "HARNESS.md").touch()
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "SKILLS.md").touch()
+
+    plugin = skills / "plugin-x"
+    plugin.mkdir()
+    (plugin / "HARNESS.md").touch()
+
+    tools = plugin / "tools"
+    tools.mkdir()
+    (tools / "TOOLS.md").write_text("---\ndescription: Plugin tools\n---\n")
+
+    node = build_tree(tmp_path, tmp_path)
+
+    def find_node(n, name):
+        if n["name"] == name:
+            return n
+        for c in n["children"]:
+            found = find_node(c, name)
+            if found:
+                return found
+        return None
+
+    tools_node = find_node(node, "tools")
+    assert tools_node is not None
+    kinds = {s["kind"]: s["name"] for s in tools_node["specs"]}
+    assert kinds.get("routing") == "TOOLS.md"
+
+
 def test_build_tree_no_description_when_file_empty(tmp_path):
     (tmp_path / "HARNESS.md").touch()
     node = build_tree(tmp_path, tmp_path)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.disclose import detect_leaf_type
+from scripts.disclose import detect_leaf_type, find_top_level_dir_name
 
 
 def find_root(target: Path) -> Path:
@@ -43,13 +43,13 @@ def collect_ancestors(target: Path, root: Path) -> list[Path]:
     return ancestors
 
 
-def spec_files_in(directory: Path, exclude: Path | None = None) -> list[dict]:
+def spec_files_in(directory: Path, root: Path, exclude: Path | None = None) -> list[dict]:
     """Return spec-named files that exist in directory, with their kind."""
     exclude_resolved = exclude.resolve() if exclude else None
     leaf_type = detect_leaf_type(directory)
     candidates = [
         ("harness", directory / "HARNESS.md"),
-        ("routing", directory / (directory.name.upper() + ".md")),
+        ("routing", directory / (find_top_level_dir_name(directory, root).upper() + ".md")),
     ]
     if leaf_type:
         candidates.append((leaf_type, directory / (leaf_type.upper() + ".md")))
@@ -67,7 +67,7 @@ def scan_ancestors(target: Path, root: Path) -> list[dict]:
     """Collect spec-named files from each ancestor directory."""
     references: list[dict] = []
     for ancestor in collect_ancestors(target, root):
-        references.extend(spec_files_in(ancestor, exclude=target))
+        references.extend(spec_files_in(ancestor, root, exclude=target))
     return references
 
 

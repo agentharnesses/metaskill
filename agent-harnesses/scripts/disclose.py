@@ -25,13 +25,39 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
     return meta, text[end + 3:].strip()
 
 
-def should_skip(entry: Path, parent: Path) -> bool:
+def find_top_level_dir_name(directory: Path, root: Path) -> str:
+    """Return the name of whichever directory sits immediately below the
+    nearest harness-root boundary above (or at) ``directory``.
+
+    The "boundary" is the overall ``root``, or a nested ancestor that has its
+    own HARNESS.md. Routing-file names are derived from this top-level
+    directory's name and propagate unchanged through all nesting beneath the
+    boundary, resetting whenever a further-nested HARNESS.md establishes a
+    new boundary.
+    """
+    directory = directory.resolve()
+    root = root.resolve()
+    if directory == root:
+        return directory.name
+    current = directory
+    segment = current.name
+    while True:
+        parent = current.parent
+        if parent == current:
+            return segment
+        if parent == root or (parent / "HARNESS.md").exists():
+            return segment
+        segment = parent.name
+        current = parent
+
+
+def should_skip(entry: Path, parent: Path, root: Path) -> bool:
     name = entry.name
     if name.startswith("."):
         return True
     if name == "HARNESS.md":
         return True
-    if entry.is_file() and name == parent.name.upper() + ".md":
+    if entry.is_file() and name == find_top_level_dir_name(parent, root).upper() + ".md":
         return True
     return False
 
@@ -114,9 +140,9 @@ def file_type(path: Path, root: Path) -> str:
     return parts[0] if len(parts) > 1 else root.name
 
 
-def get_description(path: Path, kind: str) -> str | None:
+def get_description(path: Path, kind: str, root: Path) -> str | None:
     if kind == "group":
-        target = path / (path.name.upper() + ".md")
+        target = path / (find_top_level_dir_name(path, root).upper() + ".md")
     elif path.is_dir():
         target = path / (kind.upper() + ".md")
     else:
@@ -152,7 +178,7 @@ def peek(directory: Path, root: Path) -> list[dict]:
     items = []
     idx = 1
     for entry in entries:
-        if should_skip(entry, directory):
+        if should_skip(entry, directory, root):
             continue
         if entry.resolve() == SESSIONS_DIR.resolve():
             continue
@@ -160,7 +186,7 @@ def peek(directory: Path, root: Path) -> list[dict]:
         if not kind:
             continue
         item_type = file_type(entry, root) if kind == "file" else kind
-        description = get_description(entry, kind)
+        description = get_description(entry, kind, root)
         item: dict = {
             "id": idx,
             "type": item_type,
@@ -200,8 +226,8 @@ def _delete_session(session_id: str) -> None:
         p.unlink()
 
 
-def _get_context(directory: Path) -> str | None:
-    summary = directory / (directory.name.upper() + ".md")
+def _get_context(directory: Path, root: Path) -> str | None:
+    summary = directory / (find_top_level_dir_name(directory, root).upper() + ".md")
     if not summary.exists():
         return None
     try:
@@ -220,7 +246,7 @@ def _advance_queue(state: dict) -> list[dict]:
         next_dir = Path(entry["path"])
         state["depth"] = entry["depth"]
         state["current_path"] = str(next_dir)
-        state["current_context"] = _get_context(next_dir)
+        state["current_context"] = _get_context(next_dir, root)
         items = peek(next_dir, root)
         state["current_items"] = items
         if items:

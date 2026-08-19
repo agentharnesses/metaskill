@@ -39,6 +39,14 @@ If neither mechanism matches, the directory is a plain `"group"`.
 
 **Description source for leaf directories:** `disclose.py` looks for `<LEAF-TYPE-UPPER>.md` inside the directory (e.g. `SKILL.md` for type `skill`, `MCP-SERVER.md` for type `mcp-server`).
 
+## Routing Filenames and Nested Harnesses
+
+Every group directory's "routing" summary file is named after the **top-level directory** it lives under (e.g. `skills/` → `SKILLS.md`, `references/` → `REFERENCES.md`), and that name propagates unchanged through all nesting beneath it — `skills/maintenance/`'s routing file is still `SKILLS.md`, not `MAINTENANCE.md`.
+
+**Nested harnesses reset this.** If a subdirectory contains its own `HARNESS.md`, it establishes a fresh boundary: routing-filename propagation starts over from whatever sits directly beneath *that* directory, exactly as it would at the true harness root. E.g. under `skills/plugin-x/` where `plugin-x/` has its own `HARNESS.md`, a further subdirectory `plugin-x/tools/` gets `TOOLS.md`, not `SKILLS.md`. This is computed by `find_top_level_dir_name()` in `scripts/disclose.py`, walking up from a directory to the nearest boundary (the harness root, or the nearest ancestor with its own `HARNESS.md`).
+
+`.leaf-detectors` is unaffected by nested-harness boundaries — it keeps walking up to the nearest ancestor config file regardless.
+
 ---
 
 ## How to Use
