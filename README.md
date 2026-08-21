@@ -1,6 +1,8 @@
 # metaskill
 
-A skill for agents that don't have native [Agent Harnesses](https://agentharnesses.io) integration.
+Two skills for working with [Agent Harnesses](https://agentharnesses.io): `agent-harnesses`, for
+agents that don't have native harness integration, and `harnessify`, which authors real harness
+routing for a repo that doesn't have any yet.
 
 ## Background
 
@@ -29,6 +31,8 @@ metaskill/
 │   ├── scripts/
 │   │   └── disclose.py    # Progressive disclosure CLI
 │   └── sessions/          # Runtime session state (gitignored)
+├── harnessify/            # The skill — invoke this to author routing for a bare repo
+│   └── SKILL.md           # Agent instructions and process
 └── tests/                 # Test suite for disclose.py
 ```
 
@@ -105,32 +109,48 @@ When `disclose.py` peeks a directory, each entry is classified:
 
 Summary files like `SKILLS.md`, `REFERENCES.md`, and `HARNESS.md` are not provided to the model as an end result as they exist for routing purposes.
 
+## `harnessify`
+
+A second, separate skill for the opposite problem: a repo with a bare `HARNESS.md` (or none at
+all) and no real routing yet. Invoking `harnessify` surveys the repo's actual structure — existing
+package/module boundaries, READMEs, docstrings — and authors real `HARNESS.md` content, nested
+routing files, and leaf descriptors grounded in what's actually there, never a generic template.
+See `harnessify/SKILL.md` for the full process. Typical flow: `ahar init` (writes a bare
+`HARNESS.md`, nothing else) → load a runtime that has this skill available → invoke `harnessify`
+→ the repo now has real routing to explore with `agent-harnesses`.
+
 ## Installation
 
 ### Claude Code — global (all projects)
 
-Symlink the `agent-harnesses` skill into your user skills directory so Claude Code can invoke it from any project:
+Symlink both skills into your user skills directory so Claude Code can invoke either from any project:
 
 ```bash
 git clone https://github.com/agentharnesses/metaskill
 ln -s "$(pwd)/metaskill/agent-harnesses" ~/.claude/skills/agent-harnesses
+ln -s "$(pwd)/metaskill/harnessify" ~/.claude/skills/harnessify
 ```
 
-The skill will be available to Claude as `agent-harnesses`.
+The skills will be available to Claude as `agent-harnesses` and `harnessify`.
 
 ### Claude Code — project-local (one project)
 
-To limit the skill to a single project, symlink into that project's `.claude/skills/` directory instead:
+To limit the skills to a single project, symlink into that project's `.claude/skills/` directory instead:
 
 ```bash
 git clone https://github.com/agentharnesses/metaskill
 mkdir -p /path/to/your/project/.claude/skills
 ln -s "$(pwd)/metaskill/agent-harnesses" /path/to/your/project/.claude/skills/agent-harnesses
+ln -s "$(pwd)/metaskill/harnessify" /path/to/your/project/.claude/skills/harnessify
 ```
+
+Or, for a real (non-symlinked) install of both at once: `ahar init --metaskill` (see
+[agentharnesses/cli](https://github.com/agentharnesses/cli)) clones this repo fresh and copies
+both skills into `.claude/skills/`.
 
 ### Other Agent Skills-compatible runtimes
 
-Copy or symlink `agent-harnesses/` wherever your runtime loads skills from, then invoke it as `agent-harnesses`. Consult your runtime's documentation for the exact skill directory path.
+Copy or symlink `agent-harnesses/` and/or `harnessify/` wherever your runtime loads skills from, then invoke each by its directory name. Consult your runtime's documentation for the exact skill directory path.
 
 ---
 
