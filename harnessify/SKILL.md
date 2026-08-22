@@ -63,4 +63,5 @@ all — decide based on what's actually here, don't force one:
 ### 4. Validate before finishing
 
 Run `ahar validate .` (or the harness root's path) and fix anything it flags. This is a free,
-already-built correctness check — don't skip it and don't hand-roll your own.
+already-built correctness check — don't skip it and don't hand-roll your own. If issues arise,
+correct them and validate again.
